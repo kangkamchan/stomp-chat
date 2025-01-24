@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <title>stomp-chat</title>
+    <script src="/webjars/sockjs-client/1.5.1/sockjs.min.js"></script>
+    <script src="/webjars/stomp-websocket/2.3.4/stomp.min.js"></script>
+</head>
+<style>
+    #chat{
+        border: 1px solid black;
+        width: 500px;
+        height: 500px;
+        overflow-y: scroll;
+    }
+    #message{
+        width: 400px;
+    }
+</style>
+<body>
+<div>
+    <h2>채팅방</h2>
+    <div id="chat">
+        <!-- 메시지 표시창 -->
+    </div>
+    <input type="text" id="message" placeholder="메시지를 입력하세요" />
+    <button onclick="send()">보내기</button>
+</div>
+<script th:inline="javascript">
+    const username = [[${username}]]; //username 값 서버에서 전송
+    let stompClient; //전역 객체로 선언
+    //웹소켓 연결
+    function connect(){
+        const socket = new SockJS("/stomp-chat");
+        stompClient = Stomp.over(socket);
+        //웹소켓 연결 시 설정
+        stompClient.connect({},()=>{
+            console.log(username+" websocket connected");
+            //메시지 구독 /topic/chat 경로의 메시지를 파싱하고 화면에 출력
+            stompClient.subscribe("/topic/chat",(message)=>{
+                const chatMessage = JSON.parse(message.body);
+                showMessage(chatMessage)
+            });
+            //입장 메시지 전송
+            enter();
+        });
+    }
+    //웹소켓 연결 해제
+    function disconnect() {
+        if (stompClient) {
+            stompClient.disconnect(() => {
+                console.log(username + " websocket disconnected");
+            });
+        }
+    }
+    //채팅방 입장 메시지 전송
+    function enter(){
+        stompClient.send("/app/chat/enter",{},JSON.stringify({
+            sender: username,
+            type: "ENTER"
+        }));
+    }
+    //채팅방 퇴장 메시지 전송
+    function exit(){
+        stompClient.send("/app/chat/exit",{},JSON.stringify({
+            sender: username,
+            type: "EXIT"
+        }));
+    }
+    //채팅방에 메시지 전송
+    function send(){
+        const messageInput = document.getElementById("message");
+        const messageContent = messageInput.value.trim();
+        if(messageContent && stompClient){
+            stompClient.send("/app/chat/send",{},JSON.stringify({
+                sender: username,
+                content: messageContent,
+                type: "CHAT"
+            }));
+            messageInput.value="";
+        }
+    }
+    //채팅 메시지를 출력함
+    function showMessage(message){
+        const chatDiv = document.getElementById("chat");
+        const messageElement = document.createElement("div");
+        //일반 채팅일 경우 자신의 메시지는 오른쪽에, 상대의 메시지는 왼쪽에 정렬
+        //일반 채팅이 아닌 입장, 퇴장의 경우 메시지만 중앙에 정렬
+        if(message.type === "CHAT") {
+            messageElement.textContent = `[${message.sender}]: ${message.content}`;
+            messageElement.style.textAlign = message.sender === username ? "right" : "left";
+        }else{
+            messageElement.textContent = `${message.content}`;
+            messageElement.style.textAlign = "center";
+        }
+        chatDiv.appendChild(messageElement);
+        //채팅 입력 시 스크롤 맨 아래로 내리기
+        chatDiv.scrollTop = chatDiv.scrollHeight;
+    }
+    //연결
+    connect();
+    //연결 해제
+    window.onbeforeunload = () => {
+        exit();
+        disconnect();
+    };
+    //엔터키로 메시지 보내기
+    document.getElementById("message").addEventListener("keydown",(e)=>{
+        if(e.key === 'Enter'){
+            send();
+        }
+    })
+</script>
+</body>
+</html>
